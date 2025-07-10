@@ -4,6 +4,7 @@
 <html>
 <head>
 <title>크루 등록</title>
+
 <style>
 form {
 	width: 60%;
@@ -19,15 +20,10 @@ label {
 	margin-top: 15px;
 }
 
-input[type="text"], textarea, select {
+input[type="text"], textarea {
 	width: 100%;
 	padding: 10px;
 	margin-top: 5px;
-}
-
-.dong-list button {
-	margin: 5px;
-	padding: 5px 10px;
 }
 
 button[type="submit"] {
@@ -37,81 +33,131 @@ button[type="submit"] {
 	color: white;
 	border: none;
 	border-radius: 5px;
+	cursor: pointer;
+}
+
+.dong-list {
+	margin-top: 10px;
+}
+
+.dong-list button {
+	margin: 5px;
+	padding: 5px 10px;
 }
 </style>
 </head>
 <body>
 
-	<h2 style="text-align: center;">🚀 새 크루 등록</h2>
-
 	<form action="/usr/walkCrew/doCreate" method="post">
+		<h2>🚀 새 크루 등록</h2>
 
-		<label for="title">제목</label>
-		<input type="text" name="title" id="title" required />
+		<label>제목</label>
+		<input type="text" name="title" required />
 
-		<label for="descriptoin">설명</label>
-		<textarea name="descriptoin" id="descriptoin" rows="5" required></textarea>
+		<label>설명</label>
+		<textarea name="description" rows="5" required></textarea>
 
-		<!-- 지역 구 선택 -->
-		<label for="area">지역(구)</label>
-		<select id="area" name="area" required>
-			<option value="">-- 구 선택 --</option>
-			<option value="서구">서구</option>
-			<option value="중구">중구</option>
-			<option value="유성구">유성구</option>
-			<!-- 동적으로 받아오려면 JS에서 fetch 로 삽입 -->
-		</select>
-
-		<!-- 동 리스트 출력 (선택된 구에 따라) -->
 		<label>동 선택</label>
-		<div class="dong-list" id="dongList">
-			<small>지역(구)를 선택하면 해당 동네가 표시됩니다</small>
+		<div>
+			현재 위치:
+			<span id="currentLocation">확인 중...</span>
 		</div>
-		<input type="hidden" name="dong" id="selectedDong" />
 
-		<!-- 작성자 ID는 로그인 세션에서 가져오고 hidden 처리 -->
-		<input type="hidden" name="leaderId" value="${rq.loginedMemberId}" />
+		<div class="dong-list" id="dongListContainer"></div>
+
+		<input type="hidden" name="selectedDong" id="selectedDong" />
 
 		<button type="submit">등록</button>
 	</form>
 
-	<div style="text-align: center;">
+	<div style="text-align: center; margin-top: 30px;">
 		<a href="/usr/walkCrew/list">← 목록으로 돌아가기</a>
 	</div>
 
 	<script>
-    document.querySelector("#area").addEventListener("change", function () {
-        const district = this.value;
-        const dongListDiv = document.querySelector("#dongList");
-        dongListDiv.innerHTML = "불러오는 중...";
+	  // Kakao Maps API 로드 후 콜백 실행
+	  function loadKakaoMap(callback) {
+	    const script = document.createElement("script");
+	    script.src = "https://dapi.kakao.com/v2/maps/sdk.js?appkey=${kakaoJsKey}&autoload=false&libraries=services";
+	    script.onload = () => {
+	      kakao.maps.load(callback);
+	    };
+	    document.head.appendChild(script);
+	  }
 
-        fetch(`/usr/api/dongList?district=${district}`)
-            .then(res => res.json())
-            .then(data => {
-                dongListDiv.innerHTML = "";
+	  window.onload = function () {
+	    loadKakaoMap(function () {
+	      if (navigator.geolocation) {
+	        navigator.geolocation.getCurrentPosition(function (position) {
+	          const lat = position.coords.latitude;
+	          const lng = position.coords.longitude;
 
-                if (data.length === 0) {
-                    dongListDiv.innerHTML = "해당 지역의 동 정보가 없습니다.";
-                    return;
-                }
+	          const geocoder = new kakao.maps.services.Geocoder();
+	          geocoder.coord2RegionCode(lng, lat, function (result, status) {
+	            if (status === kakao.maps.services.Status.OK) {
+	              for (let i = 0; i < result.length; i++) {
+	                if (result[i].region_type === "B") {
+	                  const fullAddr = result[i].address_name;
+	                  document.getElementById("currentLocation").innerText = fullAddr;
 
-                data.forEach(dong => {
-                    const btn = document.createElement("button");
-                    btn.type = "button";
-                    btn.textContent = dong;
-                    btn.onclick = () => {
-                        document.querySelector("#selectedDong").value = dong;
+	                  const parts = fullAddr.split(" ");
+	                  if (parts.length >= 3) {
+	                    const city = parts[0];
+	                    const district = parts[1];
 
-                        // 선택 시 강조
-                        document.querySelectorAll("#dongList button").forEach(b => b.style.backgroundColor = "");
-                        btn.style.backgroundColor = "#4CAF50";
-                        btn.style.color = "white";
-                    };
-                    dongListDiv.appendChild(btn);
-                });
-            });
-    });
-</script>
+	                    loadDongList(city, district);
+	                  }
+	                  break;
+	                }
+	              }
+	            } else {
+	              document.getElementById("currentLocation").innerText = "위치 정보 불러오기 실패";
+	            }
+	          });
+	        }, function (error) {
+	          document.getElementById("currentLocation").innerText = "위치 접근 거부됨";
+	        });
+	      } else {
+	        document.getElementById("currentLocation").innerText = "GPS를 지원하지 않는 브라우저입니다.";
+	      }
+	    });
+	  };
+
+	  function loadDongList(city, district) {
+	    const url = "/usr/walkCrew/getDongs?city=" + encodeURIComponent(city) + "&district=" + encodeURIComponent(district);
+
+	    fetch(url)
+	      .then(response => response.json())
+	      .then(data => {
+	        const container = document.getElementById("dongListContainer");
+	        container.innerHTML = "";
+
+	        if (data.length === 0) {
+	          container.innerText = "해당 지역의 동 정보가 없습니다.";
+	          return;
+	        }
+
+	        data.forEach(dong => {
+	          const btn = document.createElement("button");
+	          btn.type = "button";
+	          btn.innerText = dong;
+	          btn.onclick = () => {
+	            document.getElementById("selectedDong").value = dong;
+
+	            document.querySelectorAll(".dong-list button").forEach(b => {
+	              b.style.backgroundColor = "";
+	            });
+	            btn.style.backgroundColor = "#ddd";
+	          };
+	          container.appendChild(btn);
+	        });
+	      })
+	      .catch(err => {
+	        document.getElementById("dongListContainer").innerText = "동 정보 로딩 실패";
+	        console.error("Error loading dongs:", err);
+	      });
+	  }
+	</script>
 
 </body>
 </html>

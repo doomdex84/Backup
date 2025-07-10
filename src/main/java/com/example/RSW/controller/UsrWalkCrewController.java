@@ -14,18 +14,25 @@ import org.springframework.web.bind.annotation.ResponseBody;
 
 import com.example.RSW.vo.Rq;
 import com.example.RSW.vo.WalkCrew;
+import com.example.RSW.vo.District;
 import com.example.RSW.vo.Member;
 import com.example.RSW.vo.ResultData;
 import com.example.RSW.util.Ut;
+import com.example.RSW.config.AppConfig;
+import com.example.RSW.service.DistrictService;
 import com.example.RSW.service.MemberService;
 import com.example.RSW.service.WalkCrewService;
 
 import jakarta.servlet.http.HttpServletRequest;
+import java.time.ZoneId;
+import java.util.Date;
 
-
-@Controller 
+@Controller
 @RequestMapping("/usr/walkCrew")
 public class UsrWalkCrewController {
+
+	@Autowired
+	public DistrictService districtService;
 
 	private final WalkCrewService walkCrewService;
 
@@ -43,9 +50,13 @@ public class UsrWalkCrewController {
 	}
 
 	// 크루 등록 폼 페이지
+	@Autowired
+	private AppConfig appConfig; // @Value 주입된 클래스
+
 	@GetMapping("/create")
-	public String showCreateForm() {
-		return "usr/walkCrew/create"; // => /WEB-INF/views/usr/walkCrew/create.jsp
+	public String showCreateForm(Model model) {
+		model.addAttribute("kakaoJsKey", appConfig.getKakaoJavascriptKey()); // JSP에서 사용될 키
+		return "usr/walkCrew/create";
 	}
 
 	// 크루 등록 처리
@@ -56,10 +67,43 @@ public class UsrWalkCrewController {
 	}
 
 	// 크루 상세보기 페이지
+
 	@GetMapping("/detail/{id}")
 	public String showDetail(@PathVariable int id, Model model) {
 		WalkCrew crew = walkCrewService.getCrewById(id);
+
+		// ✅ createdAt → Date 변환
+		Date createdDate = Date.from(crew.getCreatedAt().atZone(ZoneId.systemDefault()).toInstant());
+
+		// ✅ 지역 이름 조회
+		String crewLocation = "";
+		if (crew.getDistrictId() != 0) {
+			District district = districtService.findById(crew.getDistrictId()); // 반드시 이 메서드가 있어야 함
+			if (district != null) {
+				crewLocation = district.getSido() + " " + district.getSigungu() + " " + district.getDong();
+			}
+		}
+
 		model.addAttribute("crew", crew);
-		return "usr/walkCrew/detail"; // => /WEB-INF/views/usr/walkCrew/detail.jsp
+		model.addAttribute("createdDate", createdDate);
+		model.addAttribute("crewLocation", crewLocation); // ✅ JSP로 넘김
+
+		return "usr/walkCrew/detail";
 	}
+
+	@PostMapping("/join")
+	public String joinCrew(@RequestParam("crewId") int crewId, HttpServletRequest req) {
+		Rq rq = (Rq) req.getAttribute("rq");
+		int memberId = rq.getLoginedMemberId();
+
+		walkCrewService.joinCrew(memberId, crewId);
+		return "redirect:/usr/walkCrew/detail?id=" + crewId;
+	}
+
+	@GetMapping("/getDongs")
+	@ResponseBody
+	public List<String> getDongs(@RequestParam String city, @RequestParam String district) {
+		return districtService.findDongsByCityAndDistrict(city, district);
+	}
+
 }

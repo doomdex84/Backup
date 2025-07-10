@@ -32,4 +32,5 @@ custom:
   emailFromName: aniwell
 
 kakao:
-  rest-api-key: ${KAKAO_REST_API_KEY}
+  rest-api-key: "4ee9fc0d14943aa9c3cbdc16c6bcb982"
+  javascript-key: "dfd275f49b78960a0458d6f6294cbde2"
